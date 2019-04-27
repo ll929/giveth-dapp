@@ -41,10 +41,13 @@ class DelegateButton extends Component {
 
     this.state = {
       isSaving: false,
-      objectsToDelegateTo: [],
+      // objectsToDelegateTo: [],
+      objectsToDelegateToCampaign: [],
+      objectsToDelegateToMilestone: [],
       modalVisible: false,
       amount: '0',
       maxAmount: new BigNumber('0'),
+      curProjectId: null,
     };
 
     this.submit = this.submit.bind(this);
@@ -67,7 +70,7 @@ class DelegateButton extends Component {
       });
   }
 
-  selectedObject({ target }) {
+  selectedObject(type, { target }) {
     const admin = this.props.types.find(t => t._id === target.value[0]);
 
     let maxAmount = this.props.donation.amountRemaining;
@@ -83,16 +86,26 @@ class DelegateButton extends Component {
     this.setState({
       maxAmount,
       amount: maxAmount.toFixed(),
-      objectsToDelegateTo: target.value,
     });
+    if (type === Milestone.type) {
+      this.setState({ objectsToDelegateToMilestone: target.value });
+    } else {
+      this.setState({
+        curProjectId: admin ? admin.projectId : null,
+        objectsToDelegateToCampaign: target.value,
+        objectsToDelegateToMilestone: [],
+      });
+    }
   }
 
   submit(model) {
     const { donation } = this.props;
     this.setState({ isSaving: true });
 
+    const { objectsToDelegateToCampaign, objectsToDelegateToMilestone } = this.state;
+    const objectsToDelegateTo = objectsToDelegateToMilestone[0] || objectsToDelegateToCampaign[0];
     // find the type of where we delegate to
-    const admin = this.props.types.find(t => t._id === this.state.objectsToDelegateTo[0]);
+    const admin = this.props.types.find(t => t._id === objectsToDelegateTo);
 
     // TODO: find a more friendly way to do this.
     if (
@@ -164,10 +177,18 @@ class DelegateButton extends Component {
 
   render() {
     const { types, milestoneOnly, donation } = this.props;
-    const { isSaving, objectsToDelegateTo, maxAmount } = this.state;
+    const {
+      isSaving,
+      objectsToDelegateToCampaign,
+      objectsToDelegateToMilestone,
+      maxAmount,
+      curProjectId,
+    } = this.state;
     const style = { display: 'inline-block' };
     const pStyle = { whiteSpace: 'normal' };
 
+    const campaignTypes = [];
+    const milestoneTypes = [];
     const getTypes = () =>
       types
         .filter(
@@ -177,17 +198,31 @@ class DelegateButton extends Component {
             t.token.symbol === donation.token.symbol,
         )
         .map(t => {
+          const isMilestone = t instanceof Milestone;
           const el = {};
           el.name = t.title;
-          el.type = t instanceof Milestone ? Milestone.type : Campaign.type;
+          el.type = isMilestone ? Milestone.type : Campaign.type;
           el.id = t._id;
           el.element = (
             <span>
               {t.title} <em>{t instanceof Milestone ? 'Milestone' : 'Campaign'}</em>
             </span>
           );
+          if (isMilestone) {
+            el.campaignProjectId = t.campaign.projectId;
+          }
           return el;
         });
+
+    getTypes().forEach(t => {
+      if (t.type === Milestone.type) {
+        if ([null, t.campaignProjectId].includes(curProjectId)) {
+          milestoneTypes.push(t);
+        }
+      } else {
+        campaignTypes.push(t);
+      }
+    });
 
     return (
       <span style={style}>
@@ -218,15 +253,24 @@ class DelegateButton extends Component {
           <Form onSubmit={this.submit} layout="vertical">
             <div className="form-group">
               <span className="label">Delegate to:</span>
+              {!milestoneOnly && (
+                <InputToken
+                  name="delegateTo"
+                  label="Delegate to:"
+                  placeholder="Select a Campaign"
+                  value={objectsToDelegateToCampaign}
+                  options={campaignTypes}
+                  onSelect={v => this.selectedObject(Campaign.type, v)}
+                  maxLength={1}
+                />
+              )}
               <InputToken
                 name="delegateTo"
                 label="Delegate to:"
-                placeholder={
-                  milestoneOnly ? 'Select a Milestone' : 'Select a Campaign or Milestone'
-                }
-                value={objectsToDelegateTo}
-                options={getTypes()}
-                onSelect={this.selectedObject}
+                placeholder="Select a Milestone"
+                value={objectsToDelegateToMilestone}
+                options={milestoneTypes}
+                onSelect={v => this.selectedObject(Milestone.type, v)}
                 maxLength={1}
               />
             </div>
@@ -269,7 +313,7 @@ class DelegateButton extends Component {
               className="btn btn-success"
               formNoValidate
               type="submit"
-              disabled={isSaving || objectsToDelegateTo.length !== 1}
+              disabled={isSaving || objectsToDelegateToCampaign.length !== 1}
             >
               {isSaving ? 'Delegating...' : 'Delegate here'}
             </button>
