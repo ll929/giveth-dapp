@@ -34,6 +34,34 @@ const modalStyles = {
 
 Modal.setAppElement('#root');
 
+function getFilterType(types, donation) {
+  return types.filter(
+    t =>
+      !(t instanceof Milestone) ||
+      !t.acceptsSingleToken ||
+      t.token.symbol === donation.token.symbol,
+  );
+}
+
+function getTypes(types) {
+  return types.map(t => {
+    const isMilestone = t instanceof Milestone;
+    const el = {};
+    el.name = t.title;
+    el.type = isMilestone ? Milestone.type : Campaign.type;
+    el.id = t._id;
+    el.element = (
+      <span>
+        {t.title} <em>{t instanceof Milestone ? 'Milestone' : 'Campaign'}</em>
+      </span>
+    );
+    if (isMilestone) {
+      el.campaignProjectId = t.campaign.projectId;
+    }
+    return el;
+  });
+}
+
 // FIXME: We need slider component that uses bignumbers, there are some precision issues here
 class DelegateButton extends Component {
   constructor(props) {
@@ -189,32 +217,11 @@ class DelegateButton extends Component {
 
     const campaignTypes = [];
     const milestoneTypes = [];
-    const getTypes = () =>
-      types
-        .filter(
-          t =>
-            !(t instanceof Milestone) ||
-            !t.acceptsSingleToken ||
-            t.token.symbol === donation.token.symbol,
-        )
-        .map(t => {
-          const isMilestone = t instanceof Milestone;
-          const el = {};
-          el.name = t.title;
-          el.type = isMilestone ? Milestone.type : Campaign.type;
-          el.id = t._id;
-          el.element = (
-            <span>
-              {t.title} <em>{t instanceof Milestone ? 'Milestone' : 'Campaign'}</em>
-            </span>
-          );
-          if (isMilestone) {
-            el.campaignProjectId = t.campaign.projectId;
-          }
-          return el;
-        });
+    const milestoneOnlyCampaignTypes = [];
+    const filteredTypes = getFilterType(types, donation);
+    const objectsToDelegateTypes = getTypes(filteredTypes);
 
-    getTypes().forEach(t => {
+    objectsToDelegateTypes.forEach(t => {
       if (t.type === Milestone.type) {
         if ([null, t.campaignProjectId].includes(curProjectId)) {
           milestoneTypes.push(t);
@@ -223,7 +230,13 @@ class DelegateButton extends Component {
         campaignTypes.push(t);
       }
     });
-
+    const campaignValue = [];
+    if (milestoneOnly && filteredTypes.length > 0) {
+      milestoneOnlyCampaignTypes.push(...getTypes([filteredTypes[0].campaign]));
+      campaignValue.push(milestoneOnlyCampaignTypes[0].id);
+    } else {
+      campaignValue.push(...objectsToDelegateToCampaign);
+    }
     return (
       <span style={style}>
         <button type="button" className="btn btn-success btn-sm" onClick={() => this.openDialog()}>
@@ -253,17 +266,16 @@ class DelegateButton extends Component {
           <Form onSubmit={this.submit} layout="vertical">
             <div className="form-group">
               <span className="label">Delegate to:</span>
-              {!milestoneOnly && (
-                <InputToken
-                  name="delegateTo"
-                  label="Delegate to:"
-                  placeholder="Select a Campaign"
-                  value={objectsToDelegateToCampaign}
-                  options={campaignTypes}
-                  onSelect={v => this.selectedObject(Campaign.type, v)}
-                  maxLength={1}
-                />
-              )}
+              <InputToken
+                disabled={milestoneOnly}
+                name="delegateTo"
+                label="Delegate to:"
+                placeholder="Select a Campaign"
+                value={campaignValue}
+                options={milestoneOnly ? milestoneOnlyCampaignTypes : campaignTypes}
+                onSelect={v => this.selectedObject(Campaign.type, v)}
+                maxLength={1}
+              />
               <InputToken
                 name="delegateTo"
                 label="Delegate to:"
@@ -313,7 +325,11 @@ class DelegateButton extends Component {
               className="btn btn-success"
               formNoValidate
               type="submit"
-              disabled={isSaving || objectsToDelegateToCampaign.length !== 1}
+              disabled={
+                isSaving || milestoneOnly
+                  ? objectsToDelegateToMilestone.length !== 1
+                  : campaignValue.length !== 1
+              }
             >
               {isSaving ? 'Delegating...' : 'Delegate here'}
             </button>
